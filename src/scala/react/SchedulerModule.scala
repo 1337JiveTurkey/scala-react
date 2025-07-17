@@ -7,8 +7,8 @@ import javax.swing.SwingUtilities
 trait SchedulerModule { self: Domain =>
 
 
-  def schedule(r: Runnable) { engine.schedule(r) }
-  def schedule(op: => Unit) { engine.schedule(op) }
+  def schedule(r: Runnable): Unit = { engine.schedule(r) }
+  def schedule(op: => Unit): Unit = { engine.schedule(op) }
 
   /**
    * The scheduler is responsible for scheduling propagation turns. Turns are not necessarily run
@@ -20,19 +20,19 @@ trait SchedulerModule { self: Domain =>
      * Repeated invocations of this method before the turn is started may not result
      * in additional turns being scheduled.
      */
-    def ensureTurnIsScheduled()
+    def ensureTurnIsScheduled(): Unit
 
     /**
      * Starts this scheduler. Called exactly once before any other method on this
      * scheduler is invoked.
      */
-    def start() {
+    def start(): Unit = {
       ensureTurnIsScheduled()
     }
   }
 
   class ManualScheduler extends Scheduler {
-    def ensureTurnIsScheduled() {}
+    def ensureTurnIsScheduled(): Unit = {}
   }
 
   /**
@@ -42,13 +42,13 @@ trait SchedulerModule { self: Domain =>
     private val isScheduled = new AtomicBoolean(false)
 
     private val runnable = new Runnable {
-      def run {
+      def run(): Unit = {
         // TODO: do we really need to CAS twice?
         if (isScheduled.compareAndSet(true, false)) engine.runTurn()
       }
     }
 
-    def ensureTurnIsScheduled() {
+    def ensureTurnIsScheduled(): Unit = {
       if (isScheduled.compareAndSet(false, true)) {
         schedule(runnable)
       }
@@ -60,7 +60,7 @@ trait SchedulerModule { self: Domain =>
      * This uses a Runnable and not a Scala closure to avoid wrapping them when interacting
      * with existing Java frameworks.
      */
-    protected def schedule(r: Runnable)
+    protected def schedule(r: Runnable): Unit
   }
 
   /**
@@ -68,13 +68,13 @@ trait SchedulerModule { self: Domain =>
    */
   class ThreadPoolScheduler(pool: ExecutorService) extends ThreadSafeScheduler {
     def this() = this(Executors.newCachedThreadPool())
-    protected def schedule(r: Runnable) = pool.execute(r)
+    protected def schedule(r: Runnable): Unit = pool.execute(r)
   }
 
   /**
    * A scheduler running turns on the Swing event dispatcher thread (EDT).
    */
   class SwingScheduler extends ThreadSafeScheduler {
-    def schedule(r: Runnable) = SwingUtilities.invokeLater(r)
+    def schedule(r: Runnable): Unit = SwingUtilities.invokeLater(r)
   }
 }

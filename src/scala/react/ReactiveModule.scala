@@ -32,8 +32,8 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
    * Runs the given `op` on maximum level in this turn, i.e., `op` is safe to query any other
    * node.
    */
-  def doLater(op: => Unit) {
-    new DoLaterNode { def react() = op }
+  def doLater(op: => Unit): Unit = {
+    new DoLaterNode { def react(): Unit = op }
   }
 
   private abstract class DoLaterNode extends LeafNode {
@@ -44,13 +44,13 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
   //def newDependents(): Dependents = PoolingWeakListSet.empty
 
   abstract class Tickable {
-    protected[react] def tick()
+    protected[react] def tick(): Unit
   }
 
   private object Node {
-    final private val TickNumMask: Long = ~(TickInvalidMask | TickMuteMask)
     final private val TickInvalidMask: Long = 1L << 63
     final private val TickMuteMask: Long = 1L << 62
+    final private val TickNumMask: Long = ~(TickInvalidMask | TickMuteMask)
   }
 
   abstract class Node extends Tickable {
@@ -67,8 +67,8 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
     private[react] val refs = new WeakReference(this)
 
     import Node._
-    protected def isPulseValid = (tickBits & TickInvalidMask) == 0
-    def lastTicked = tickBits & TickNumMask
+    protected def isPulseValid: Boolean = (tickBits & TickInvalidMask) == 0
+    def lastTicked: Long = tickBits & TickNumMask
 
     /**
      * Makes sure that the pulse of this node is consistent. Might be called multiple times in a
@@ -76,16 +76,16 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
      * if checkTopology() would throw an exception when this method is called, the behavior of
      * this method is undefined.
      */
-    protected def validatePulse() {
+    protected def validatePulse(): Unit = {
       if (!isPulseValid) {
         doValidatePulse()
         setPulseValid()
       }
     }
 
-    protected def doValidatePulse()
+    protected def doValidatePulse(): Unit
 
-    protected def setPulseValid() {
+    protected def setPulseValid(): Unit = {
       if (!isPulseValid) setNotEmitting()
     }
 
@@ -104,11 +104,11 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
 
     def isEmitting: Boolean = tickBits == engine.currentTurn
 
-    protected def setEmitting() {
+    protected def setEmitting(): Unit = {
       assert((engine.currentTurn & TickInvalidMask & TickMuteMask) == 0) // overflow
       tickBits = engine.currentTurn
     }
-    protected def setNotEmitting() {
+    protected def setNotEmitting(): Unit = {
       tickBits = engine.currentTurn | TickMuteMask
     }
 
@@ -134,17 +134,17 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
      * propagation set. As this method may be called out of topolical order, implementations should
      * not access this node's dependencies.
      */
-    protected[react] def tick()
+    protected[react] def tick(): Unit
 
     /**
      * Ticks this nodes dependents. Does nothing, if or when this nodes does not have dependents.
      */
-    protected def tickDependents()
+    protected def tickDependents(): Unit
 
     /**
      * Throws an exception if accessed from a level <= the level of this node. No-op otherwise.
      */
-    def checkTopology() =
+    def checkTopology(): Unit =
       if (level >= engine.currentLevel) engine.levelMismatch(this)
 
     /**
@@ -153,7 +153,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
      * if checkTopology() would throw an exception when this method is called, the behavior of
      * this method is undefined.
      */
-    protected def validateValue()
+    protected def validateValue(): Unit
 
     def isDisposed: Boolean = tickBits == 0
 
@@ -163,15 +163,15 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
      * Subclasses that override this method should always call `super.disconnect()`
      * so effects of this method are chained.
      */
-    protected def disconnect() { tickBits = 0 }
+    protected def disconnect(): Unit = { tickBits = 0 }
 
-    def dispose() {
+    def dispose(): Unit = {
       disconnect()
     }
 
     def reactiveDescriptor: String = getClass.getName
 
-    override def toString = {
+    override def toString: String = {
       val nme = name
       val prefix = if (nme != null && nme != "") name + ":" else ""
       prefix + reactiveDescriptor + "@" + level
@@ -182,13 +182,13 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
    * A node that does nothing.
    */
   trait MuteNode extends Node {
-    protected[react] def tick() {}
+    protected[react] def tick(): Unit = {}
     override def isEmitting = false
-    override protected def tickDependents() {}
-    override def checkTopology() {}
-    override protected def validatePulse() {}
-    override def doValidatePulse() {}
-    override protected def validateValue() {}
+    override protected def tickDependents(): Unit = {}
+    override def checkTopology(): Unit = {}
+    override protected def validatePulse(): Unit = {}
+    override def doValidatePulse(): Unit = {}
+    override protected def validateValue(): Unit = {}
   }
 
   object NilNode extends MuteNode
@@ -200,7 +200,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
    * its dependents until the engine tells this node to evaluate.
    */
   trait StrictNode extends Node {
-    protected[react] def tick() {
+    protected[react] def tick(): Unit = {
       if (invalidate()) engine.defer(this)
     }
 
@@ -208,7 +208,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
      * Called by the engine when this node defered itself in `tick`. Always called in topological
      * order, so implementations may safely access its dependencies.
      */
-    protected[react] def tock() {
+    protected[react] def tock(): Unit = {
       validatePulse()
       if (isEmitting) tickDependents()
     }
@@ -224,19 +224,19 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
   trait LazyNode extends Node {
     invalidate()
 
-    protected[react] def tick() {
+    protected[react] def tick(): Unit = {
       if (invalidate()) tickDependents()
     }
   }
 
   trait LeafNode extends StrictNode {
     level = Int.MaxValue
-    protected def tickDependents() {}
+    protected def tickDependents(): Unit = {}
     protected def isValueValid = true
-    protected def doValidatePulse() { react(); setNotEmitting() }
-    protected def validateValue() {}
+    protected def doValidatePulse(): Unit = { react(); setNotEmitting() }
+    protected def validateValue(): Unit = {}
 
-    protected def react()
+    protected def react(): Unit
   }
 
   /**
@@ -254,7 +254,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
     /**
      * Tick all dependents of this node.
      */
-    protected def tickDependents() {
+    protected def tickDependents(): Unit = {
       dependents match {
         case null =>
         case wref: WeakReference[Node] =>
@@ -280,7 +280,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
     /**
      * Transitively hoist all dependents to new level.
      */
-    private[react] def hoistDependents(newLevel: Int) {
+    private[react] def hoistDependents(newLevel: Int): Unit = {
       // impl note: in contrast to tickDependents(), don't clear unmanaged dependencies
       dependents match {
         case null =>
@@ -305,7 +305,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
     /**
      * Add the given node to this node's dependents, if not already present.
      */
-    protected[react] def subscribe(dep: Node) {
+    protected[react] def subscribe(dep: Node): Unit = {
       if ((dep ne NilNode) && !isDisposed) {
         dependents match {
           case null => dependents = dep.refs
@@ -342,7 +342,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
 
 
             val newDeps = new Array[WeakReference[Node]](oldSize * 2)
-            compat.Platform.arraycopy(arr, 0, newDeps, 0, oldSize)
+            System.arraycopy(arr, 0, newDeps, 0, oldSize)
             newDeps(oldSize) = dep.refs.asInstanceOf[WeakReference[Node]]
             dependents = newDeps
         }
@@ -352,7 +352,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
     /**
      * Removes the given node from this node's dependent set if present.
      */
-    protected[react] def unsubscribe(dep: Node) {
+    protected[react] def unsubscribe(dep: Node): Unit = {
       if (dep ne NilNode) {
         dependents match {
           case null =>
@@ -377,7 +377,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
       }
     }
 
-    protected override def disconnect() {
+    protected override def disconnect(): Unit = {
       dependents = null
       super.disconnect()
     }
@@ -399,11 +399,11 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
     protected def input: Reactive[P, V]
     //level = input.level + 1
 
-    protected def connect() {
+    protected def connect(): Unit = {
       input.subscribe(this)
     }
 
-    protected override def disconnect() {
+    protected override def disconnect(): Unit = {
       input.unsubscribe(this)
       super.disconnect()
     }
@@ -414,12 +414,12 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
     protected def input2: Reactive[P, V]
     //level = math.max(input1.level, input2.level) + 1
 
-    protected def connect() {
+    protected def connect(): Unit = {
       input1.subscribe(this)
       input2.subscribe(this)
     }
 
-    protected override def disconnect() {
+    protected override def disconnect(): Unit = {
       input1.unsubscribe(this)
       input2.unsubscribe(this)
       super.disconnect()
@@ -430,11 +430,11 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
     protected def inputs: Iterable[Reactive[Any, Any]]
     // level = inputs.foldLeft(0) { (l, r) => math.max(l, r.level) } + 1
 
-    protected def connect() {
+    protected def connect(): Unit = {
       inputs foreach { _ subscribe this }
     }
 
-    protected override def disconnect() {
+    protected override def disconnect(): Unit = {
       inputs foreach { _ unsubscribe this }
       super.disconnect()
     }
@@ -462,14 +462,14 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
 
     def isDefined: Boolean
 
-    protected def validateValue() {
+    protected def validateValue(): Unit = {
       if (!isValueValid) doValidateValue()
     }
 
-    protected def doValidateValue()
+    protected def doValidateValue(): Unit
     protected def isValueValid: Boolean
 
-    @inline final def ifDefined[U](f: V => U) {
+    @inline final def ifDefined[U](f: V => U): Unit = {
       checkTopology()
       validateValue()
       if (isDefined) f(getValue)
@@ -494,7 +494,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
      * Runs the given function with the current value of this pulse, if this pulse is currently
      * present.
      */
-    @inline final def ifEmitting[U](f: P => U) {
+    @inline final def ifEmitting[U](f: P => U): Unit = {
       checkTopology()
       validatePulse()
       assert(isPulseValid)
@@ -514,7 +514,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
 
     def changes: Events[P] = new ChangeEvents[P](this)
 
-    override def toString = {
+    override def toString: String = {
       val s = if (isPulseValid) "<valid>" else "<invalid>"
       val p = if (isEmitting) "p=" + getPulse else "<mute>"
       val v = if (isDefined) "v=" + getValue else "<undef>"
@@ -550,7 +550,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
     /**
      * Sets this reactive's state to 'not emitting'.
      */
-    protected[this] def mute() {
+    protected[this] def mute(): Unit = {
       assert(!isEmitting)
       freePulse()
       setNotEmitting()
@@ -561,12 +561,12 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
      *
      * Unfortunately, this needs to stay untyped until SI-3272 is fixed, if that'll ever happen.
      */
-    protected[this] def emit(p: Any)
+    protected[this] def emit(p: Any): Unit
 
     /**
      * Frees garbage from pulse
      */
-    protected[react] def freePulse()
+    protected[react] def freePulse(): Unit
   }
 
   /**
@@ -578,9 +578,9 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
     // some variation.
     protected[this] var pulse: P = _
 
-    def getPulse = pulse
+    def getPulse: P = pulse
 
-    protected[this] def emit(p: Any) {
+    protected[this] def emit(p: Any): Unit = {
       //val oldPulse = getPulse
       //val oldValue = getValue
       pulse = p.asInstanceOf[P]
@@ -592,7 +592,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
       // }
     }
 
-    protected[react] def freePulse() { pulse = null.asInstanceOf[P] }
+    protected[react] def freePulse(): Unit = { pulse = null.asInstanceOf[P] }
   }
 
   /**
@@ -604,9 +604,9 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
   }
 
   trait SimpleReactive[+P, +V] extends Reactive[P, V] with SimpleEmitter[P, V] {
-    protected def isValueValid = isPulseValid
+    protected def isValueValid: Boolean = isPulseValid
 
-    protected def doValidateValue() { doValidatePulse() }
+    protected def doValidateValue(): Unit = { doValidatePulse() }
   }
 
   trait DeltaReactive[+P, +V] extends Reactive[P, V] with DeltaEmitter[P, V]
@@ -618,7 +618,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
   trait OpaqueReactive[P, V] extends Reactive[P, V] {
     level = math.max(1, level)
 
-    protected def doValidatePulse() {
+    protected def doValidatePulse(): Unit = {
       depStackPush(this)
       try {
         // eval and let reactives consulted in `op` obtain our dependent
@@ -629,7 +629,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
       }
     }
 
-    protected def react()
+    protected def react(): Unit
   }
 
   /**
@@ -646,12 +646,12 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
     protected abstract class Observer extends LeafNode {
       ref()
 
-      protected override def disconnect() {
+      protected override def disconnect(): Unit = {
         super.disconnect()
         unref()
       }
 
-      protected def ref() {
+      protected def ref(): Unit = {
         _obRefs = _obRefs match {
           case null => this
           case ob: Observer => collection.immutable.Set(ob, this)
@@ -660,7 +660,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
         }
       }
 
-      protected def unref() {
+      protected def unref(): Unit = {
         _obRefs = _obRefs match {
           case null => null
           case x if x eq this => null
@@ -669,25 +669,25 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
         }
       }
 
-      override def reactiveDescriptor = "Observer@" + System.identityHashCode(this)
+      override def reactiveDescriptor: String = "Observer@" + System.identityHashCode(this)
     }
 
     class Observer1[P, V](val input: Reactive[P, V], op: P => Unit) extends Observer with Dependent1[P, V] {
       input.subscribe(this)
-      def react() {
+      def react(): Unit = {
         if (!isDisposed) input.ifEmitting(op)
       }
     }
 
     class ObserverOnce1[P, V](input: Reactive[P, V], op: P => Unit) extends Observer1[P, V](input, op) {
-      override def react() {
+      override def react(): Unit = {
         super.react()
         disconnect()
       }
     }
 
     class ObserverDynamic(op: => Unit) extends Observer {
-      def react() {
+      def react(): Unit = {
         depStackPush(this)
         try {
           op
@@ -731,7 +731,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
   }
 
   trait SimpleSource[P, V] extends SimpleReactive[P, V] with Source[P, V] {
-    protected def doValidatePulse() {
+    protected def doValidatePulse(): Unit = {
       val x = channel.get(this)
       emit(x)
     }
@@ -739,7 +739,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
 
   trait Channel[P] {
     def get(r: Reactive[P, Any]): P
-    def push(r: Reactive[P, Any], p: P)
+    def push(r: Reactive[P, Any], p: P): Unit
   }
 
   sealed trait Owner {
@@ -753,7 +753,7 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
   }
 
   abstract class Router(inputNodes: Reactive[Any, Any]*) extends DependentN with StrictNode with Owner {
-    protected val inputs = inputNodes.toSeq
+    protected val inputs: Iterable[Reactive[Any, Any]] = inputNodes.toSeq
     connect()
     protected implicit def owner: Owner = this
 
@@ -761,18 +761,18 @@ abstract class ReactiveModule extends EngineModule { module: Domain =>
 
     def newChannel[P, V](r: Reactive[P, V], p: P): Channel[P] = null
 
-    protected def tickDependents() {}
+    protected def tickDependents(): Unit = {}
 
-    protected def doValidatePulse() {
+    protected def doValidatePulse(): Unit = {
       react()
     }
 
-    protected def validateValue() {}
+    protected def validateValue(): Unit = {}
 
     //def get[P](r: Reactive[P, Any]): P = r.getPulse
     //def push[P](r: Reactive[P, Any], p: P) = r emit p
 
-    def react()
+    def react(): Unit
   }
 
   implicit def owner: Owner = DomainOwner

@@ -1,15 +1,15 @@
 package scala.react
 
-import java.util.ArrayDeque
+import java.util
 import java.util.concurrent.ConcurrentLinkedQueue
-import scala.collection.mutable.ArrayStack
+import scala.util.control.NoStackTrace
 
 abstract class EngineModule { self: Domain =>
   // Dependent stack stuff is inlined, since it needs to be as efficient as possible
   private var depStack = new Array[Node](4)
   private var depStackSize = 0
 
-  protected def depStackPush(n: Node) {
+  protected def depStackPush(n: Node): Unit = {
     if (depStackSize == depStack.length) {
       val newarr = new Array[Node](depStack.length * 2)
       System.arraycopy(depStack, 0, newarr, 0, depStack.length)
@@ -19,7 +19,7 @@ abstract class EngineModule { self: Domain =>
     depStackSize += 1
   }
 
-  protected def depStackPop() {
+  protected def depStackPop(): Unit = {
     if (depStackSize == 0) sys.error("Stack empty")
     depStackSize -= 1
     depStack(depStackSize) = null
@@ -35,16 +35,16 @@ abstract class EngineModule { self: Domain =>
    * Nodes that throw this exception must ensure that the dependent stack is in clean state, i.e.,
    * no leftovers on the stack. Otherwise dynamic dependency tracking goes havoc.
    */
-  private[react] object LevelMismatch extends util.control.NoStackTrace {
+  private[react] object LevelMismatch extends NoStackTrace {
     var accessed: Node = _
   }
 
-  @inline def runTurn(op: => Unit) {
+  @inline def runTurn(op: => Unit): Unit = {
     op
-    engine.runTurn
+    engine.runTurn()
   }
 
-  @inline def runReadTurn(leaf: LeafNode) {
+  @inline def runReadTurn(leaf: LeafNode): Unit = {
     engine.runReadTurn(leaf)
   }
 
@@ -57,34 +57,34 @@ abstract class EngineModule { self: Domain =>
 
     private var propQueue: PropQueue[StrictNode] = System.getProperty("scala.react.propqueue", "prio").toLowerCase match {
       case "prio" => new PriorityQueue[StrictNode] {
-        def priority(n: StrictNode) = n.level
+        def priority(n: StrictNode): Int = n.level
       }
       case "topo" => new TopoQueue[StrictNode] {
-        def depth(n: StrictNode) = n.level
+        def depth(n: StrictNode): Int = n.level
       }
     }
 
     def currentTurn: Long = turn
     def currentLevel: Int = level
 
-    protected def applyTodos()
+    protected def applyTodos(): Unit
 
-    def runTurn() {
+    def runTurn(): Unit = {
       turn += 1
       debug.enterTurn(currentTurn)
 
       try {
         propagate()
       } catch {
-        case e => uncaughtException(e)
+        case e: Exception => uncaughtException(e)
       } finally {
-        propQueue.clear
+        propQueue.clear()
         level = 0
         debug.leaveTurn(currentTurn)
       }
     }
 
-    def runReadTurn(leaf: LeafNode) {
+    def runReadTurn(leaf: LeafNode): Unit = {
       turn += 1
       debug.enterTurn(currentTurn)
 
@@ -93,19 +93,19 @@ abstract class EngineModule { self: Domain =>
         leaf.invalidate()
         tryTock(leaf)
       } catch {
-        case e => uncaughtException(e)
+        case e: Exception => uncaughtException(e)
       } finally {
-        propQueue.clear
+        propQueue.clear()
         level = 0
         debug.leaveTurn(currentTurn)
       }
     }
 
-    protected def propagate() {
+    protected def propagate(): Unit = {
       val queue = propQueue
       applyTodos()
       while (!queue.isEmpty) {
-        val node = queue.dequeue
+        val node = queue.dequeue()
         assert(node.level >= level)
         if (node.level > level)
           level = node.level
@@ -114,9 +114,9 @@ abstract class EngineModule { self: Domain =>
       }
     }
 
-    def newNode(n: Node) {}
+    def newNode(n: Node): Unit = {}
 
-    def defer(dep: StrictNode) {
+    def defer(dep: StrictNode): Unit = {
       debug.assertInTurn()
       val depLevel = dep.level
       if (depLevel == level) // fast path
@@ -131,7 +131,7 @@ abstract class EngineModule { self: Domain =>
      * Override to customize exception handling. The default behavior is to print a stack
      * trace and `sys.exit`.
      */
-    protected def uncaughtException(e: Throwable) {
+    private def uncaughtException(e: Exception): Unit = {
       Console.err.println("Uncaught exception in turn!")
       e.printStackTrace()
       sys.exit(-1)
@@ -140,7 +140,7 @@ abstract class EngineModule { self: Domain =>
     /**
      * Try to tock a node. Hoists the node, if on wrong level.
      */
-    protected def tryTock(dep: StrictNode) = try {
+    private def tryTock(dep: StrictNode): Unit = try {
       debug.logTock(dep)
       dep.tock()
     } catch {
@@ -150,7 +150,7 @@ abstract class EngineModule { self: Domain =>
         hoist(dep, lvl + 1)
     }
 
-    def levelMismatch(accessed: Node) {
+    def levelMismatch(accessed: Node): Unit = {
       LevelMismatch.accessed = accessed
       throw LevelMismatch
     }
@@ -158,7 +158,7 @@ abstract class EngineModule { self: Domain =>
     /**
      * Change the level of the given node and reschedule for later in this turn.
      */
-    def hoist(dep: StrictNode, newLevel: Int) {
+    def hoist(dep: StrictNode, newLevel: Int): Unit = {
       dep.level = newLevel
       dep match {
         case dep: DependencyNode => dep.hoistDependents(newLevel + 1)
@@ -167,7 +167,7 @@ abstract class EngineModule { self: Domain =>
       propQueue reinsert dep
     }
 
-    def hoist(dep: Node, newLevel: Int) {
+    def hoist(dep: Node, newLevel: Int): Unit = {
       dep.level = newLevel
       dep match {
         case dep: DependencyNode => dep.hoistDependents(newLevel + 1)
@@ -184,18 +184,18 @@ abstract class EngineModule { self: Domain =>
     // todos that can be scheduled externally, thread-safe
     private val asyncTodos = new ConcurrentLinkedQueue[AnyRef] // Runnable or ()=>Unit
     // todos that can be scheduled only inside a turn, no need for thead-safety
-    private val localTodos = new ArrayDeque[Tickable]
+    private val localTodos = new util.ArrayDeque[Tickable]
 
-    def schedule(r: Runnable) = {
+    def schedule(r: Runnable): Unit = {
       asyncTodos.add(r)
       scheduler.ensureTurnIsScheduled()
     }
-    def schedule(op: => Unit) = {
+    def schedule(op: => Unit): Unit = {
       asyncTodos.add(() => op)
       scheduler.ensureTurnIsScheduled()
     }
 
-    def tickNextTurn(t: Tickable) = {
+    def tickNextTurn(t: Tickable): Unit = {
       //assert(!localTodos.contains(t))
       // TODO: make localTodos a set?
       if (!localTodos.contains(t)) {
@@ -203,7 +203,7 @@ abstract class EngineModule { self: Domain =>
         scheduler.ensureTurnIsScheduled()
       }
     }
-    protected def applyTodos() {
+    protected def applyTodos(): Unit = {
       var t = asyncTodos.poll()
       while (t ne null) {
         debug.logTodo(t)
@@ -228,16 +228,16 @@ abstract class EngineModule { self: Domain =>
   class LocalDelayChannel[P](val node: Reactive[P, Any], p: P) extends Tickable with Channel[P] {
     private var pulse: P = p
     private var added = false
-    def push(r: Reactive[P, Any], p: P) {
+    def push(r: Reactive[P, Any], p: P): Unit = {
       pulse = p
       if (!added) {
         added = true
         engine.tickNextTurn(this)
       }
     }
-    def get(r: Reactive[P, Any]) = pulse
+    def get(r: Reactive[P, Any]): P = pulse
 
-    def tick() {
+    def tick(): Unit = {
       added = false
       node.tick()
     }
