@@ -6,7 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/../test" isTestSource="false" />
     </content>
-    <orderEntry type="jdk" jdkName="openjdk-21" jdkType="JavaSDK" />
+    <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="scala-sdk-2.13.15" level="application" />
     <orderEntry type="library" name="Static Libraries" level="project" />
