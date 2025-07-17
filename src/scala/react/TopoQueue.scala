@@ -1,12 +1,12 @@
 package scala.react
-import java.util.Arrays
+import java.util
 
 abstract class PropQueue[A >: Null: Manifest] {
-  def clear()
+  def clear(): Unit
   def dequeue(): A
   def isEmpty: Boolean
-  def +=(elem: A)
-  def reinsert(elem: A)
+  def +=(elem: A): Unit
+  def reinsert(elem: A): Unit
 }
 
 /**
@@ -17,19 +17,20 @@ abstract class PriorityQueue[A >: Null: Manifest] extends PropQueue[A] {
   private var array = new Array[A](16)
   private var size0 = 1 // array(0) unused
 
-  protected def ensureSize(n: Int) {
+  protected def ensureSize(n: Int): Unit = {
     if (n > array.length) {
       var newsize = array.length * 2
       while (n > newsize)
         newsize = newsize * 2
 
       val newar = new Array[A](newsize)
-      compat.Platform.arraycopy(array, 0, newar, 0, size0)
+
+      java.lang.System.arraycopy(array, 0, newar, 0, size0)
       array = newar
     }
   }
 
-  protected def swap(a: Int, b: Int) {
+  protected def swap(a: Int, b: Int): Unit = {
     val h = array(a)
     array(a) = array(b)
     array(b) = h
@@ -60,7 +61,7 @@ abstract class PriorityQueue[A >: Null: Manifest] extends PropQueue[A] {
     }
   }
 
-  def +=(elem: A) {
+  def +=(elem: A): Unit = {
     ensureSize(size0 * 3/2 + 1)
     array(size0) = elem
     fixUp(size0)
@@ -79,8 +80,8 @@ abstract class PriorityQueue[A >: Null: Manifest] extends PropQueue[A] {
 
   def priority(a: A): Int
 
-  def isEmpty = size0 == 1
-  def clear() { size0 = 1 }
+  def isEmpty: Boolean = size0 == 1
+  def clear(): Unit = { size0 = 1 }
 
   /*private def remove(elem: A) {
     var i = 1
@@ -109,7 +110,7 @@ abstract class PriorityQueue[A >: Null: Manifest] extends PropQueue[A] {
     -1
   }
 
-  def reinsert(elem: A) {
+  def reinsert(elem: A): Unit = {
     //remove(elem)
     val idx = indexOf(elem)
     if(idx == -1) this += elem
@@ -119,7 +120,7 @@ abstract class PriorityQueue[A >: Null: Manifest] extends PropQueue[A] {
 
   }
 
-  override def toString() =
+  override def toString: String =
     "PrioQueue" + array.mkString("[", ",", "]")
 }
 
@@ -138,7 +139,7 @@ abstract class TopoQueue[A >: Null: Manifest] extends PropQueue[A]  {
 
   compact()
 
-  def compact() {
+  def compact(): Unit = {
     sizes = Array.fill(initDepth)(0)
     levels = Array.fill(initDepth) { new Array[A](initWidth) }
     maxLevel = new Array[A](initWidth)
@@ -152,17 +153,17 @@ abstract class TopoQueue[A >: Null: Manifest] extends PropQueue[A]  {
    */
   def depth(a: A): Int
 
-  def clear() {
+  def clear(): Unit = {
     assert(isEmpty)
     curDepth = 0
     curIndex = 0
     maxDepth = 0
     maxLevelSize = 0
     // it should be slightly faster to do this here than to adapt sizes during traversal:
-    Arrays.fill(sizes, 0)
+    util.Arrays.fill(sizes, 0)
   }
 
-  def +=(a: A) {
+  def +=(a: A): Unit = {
     val d = depth(a)
     assert(d >= curDepth)
     if (d < Int.MaxValue) {
@@ -212,7 +213,7 @@ abstract class TopoQueue[A >: Null: Manifest] extends PropQueue[A]  {
         var newsize = oldSize * 2
 
         val newArr = new Array[A](newsize)
-        compat.Platform.arraycopy(arr, 0, newArr, 0, oldSize)
+        java.lang.System.arraycopy(arr, 0, newArr, 0, oldSize)
         maxLevel = newArr
         newArr
       } else arr
@@ -223,14 +224,14 @@ abstract class TopoQueue[A >: Null: Manifest] extends PropQueue[A]  {
         var newsize = oldSize * 2
 
         val newArr = new Array[A](newsize)
-        compat.Platform.arraycopy(arr, 0, newArr, 0, oldSize)
+        java.lang.System.arraycopy(arr, 0, newArr, 0, oldSize)
         levels(d) = newArr
         newArr
       } else arr
     }
 
   // ensure that we have levels allocated with indices at least up to d
-  private def ensureDepthCapacity(d: Int) = {
+  private def ensureDepthCapacity(d: Int): Unit = {
     val arr = levels
     val oldSize = arr.length
     if (d >= oldSize) {
@@ -238,10 +239,10 @@ abstract class TopoQueue[A >: Null: Manifest] extends PropQueue[A]  {
       while (d >= newSize) newSize *= 2
 
       val newArr = new Array[Array[A]](newSize)
-      compat.Platform.arraycopy(arr, 0, newArr, 0, oldSize)
+      java.lang.System.arraycopy(arr, 0, newArr, 0, oldSize)
 
       val newSizeArr = new Array[Int](newSize)
-      compat.Platform.arraycopy(sizes, 0, newSizeArr, 0, oldSize)
+      java.lang.System.arraycopy(sizes, 0, newSizeArr, 0, oldSize)
 
       // fill new levels and sizes with fresh arrays
       var i = oldSize
@@ -254,5 +255,5 @@ abstract class TopoQueue[A >: Null: Manifest] extends PropQueue[A]  {
     }
   }
 
-  def reinsert(elem: A) = sys.error("not implemented")
+  def reinsert(elem: A): Unit = sys.error("not implemented")
 }
